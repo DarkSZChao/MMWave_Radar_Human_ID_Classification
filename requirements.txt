@@ -1,0 +1,5 @@
+# Deep learning
+scikit-learn>=1.2.0
+tensorflow~=2.6.5
+Keras>=3.0.2
+
