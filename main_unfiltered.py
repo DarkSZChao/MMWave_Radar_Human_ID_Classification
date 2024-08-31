@@ -70,101 +70,6 @@ def generate_dataset(_data_np, _labels_np, split_ratio, label_categorical=False,
                 _category_No
 
 
-def matrix_generator(size=None, resolution=None, coords=None, value=None):
-    """
-    only support 3D cube matrix
-    :param size: (tuple/list) xyz in meters
-    :param resolution: (float) the matrix resolution
-    :param coords: (nparray) containing xyz numbers
-    :param value: (nparray) containing the value of that position
-    :return: _matrix: (ndarray) 3D cube matrix
-    """
-    # create an empty matrix of zeros based on the size and resolution
-    _matrix = np.zeros([int(i / resolution) for i in size])
-    # set values based on coords
-    for c, v in zip(coords, value):
-        x = int(c[0] / resolution)
-        y = int(c[1] / resolution)
-        z = int(c[2] / resolution)
-        if _matrix[x, y, z] == 0:
-            _matrix[x, y, z] = v
-        else:
-            _matrix[x, y, z] = (_matrix[x, y, z] + v) / 2  # get average if 2 or more points set into one mesh
-
-    return _matrix
-
-
-def dataset_length_fixer(method, _alldata_list):
-    if method == '3D_matrix_cube':
-        matrix_size = (2, 4, 3)
-        matrix_resolution = 0.1
-        matrix_mesh_No = [int(i / matrix_resolution) for i in matrix_size]
-        _matrix_vel_np = np.empty([0] + matrix_mesh_No)
-        _matrix_SNR_np = np.empty([0] + matrix_mesh_No)
-        i = 0
-        for frame in _alldata_list:
-            i += 1
-            print('Processing Frame No:', i)
-
-            # split coords and info
-            coords = frame[:, :3]
-            velocity = frame[:, 3]
-            SNR = frame[:, 4]
-
-            # shift the coords, keep positive
-            coords_mapped = ((coords + (1, 0, 1)) * (1, 1, 1)).astype(np.float16)
-
-            # generate sparse matrix
-            matrix_vel = matrix_generator(size=matrix_size, resolution=matrix_resolution, coords=coords_mapped, value=velocity)[np.newaxis, :]
-            matrix_SNR = matrix_generator(size=matrix_size, resolution=matrix_resolution, coords=coords_mapped, value=SNR)[np.newaxis, :]
-            # merge all matrix
-            _matrix_vel_np = np.concatenate([_matrix_vel_np, matrix_vel], axis=0)
-            _matrix_SNR_np = np.concatenate([_matrix_SNR_np, matrix_SNR], axis=0)
-
-        return _matrix_vel_np[:, :, :, :, np.newaxis], _matrix_SNR_np[:, :, :, :, np.newaxis]
-
-    elif method == '3D_matrix_cube_small':  # coords start with (0, 0, 0) by default
-        matrix_size = (0.8, 0.8, 1.8)
-        matrix_central_point = [i / 2 for i in matrix_size]
-        matrix_resolution = 0.1
-        matrix_mesh_No = [int(i / matrix_resolution) for i in matrix_size]
-        _matrix_vel_np = np.empty([0] + matrix_mesh_No)
-        _matrix_SNR_np = np.empty([0] + matrix_mesh_No)
-        count = 0
-        for frame in _alldata_list:
-            count += 1
-            print('Processing Frame No:', count)
-
-            # split coords and info
-            coords = frame[:, :3]
-            velocity = frame[:, 3]
-            SNR = frame[:, 4]
-
-            # find current frame weight central point
-            point_No = frame.shape[0]
-            x = sum(coords[:, 0]) / point_No
-            y = sum(coords[:, 1]) / point_No
-            z = sum(coords[:, 2]) / point_No
-            data_central_point = [x, y, z]
-            # compare with matrix central point and map to it
-            shift_diff = [m - d for m, d in zip(matrix_central_point, data_central_point)]
-            coords_mapped = (coords + shift_diff).astype(np.float16)
-
-            # remove points outside
-            coords_mapped = coords_mapped[(coords_mapped[:, 0] >= 0) & (coords_mapped[:, 0] < matrix_size[0])]
-            coords_mapped = coords_mapped[(coords_mapped[:, 1] >= 0) & (coords_mapped[:, 1] < matrix_size[1])]
-            coords_mapped = coords_mapped[(coords_mapped[:, 2] >= 0) & (coords_mapped[:, 2] < matrix_size[2])]
-
-            # generate sparse matrix
-            matrix_vel = matrix_generator(size=matrix_size, resolution=matrix_resolution, coords=coords_mapped, value=velocity)[np.newaxis, :]
-            matrix_SNR = matrix_generator(size=matrix_size, resolution=matrix_resolution, coords=coords_mapped, value=SNR)[np.newaxis, :]
-            # merge all matrix
-            _matrix_vel_np = np.concatenate([_matrix_vel_np, matrix_vel], axis=0)
-            _matrix_SNR_np = np.concatenate([_matrix_SNR_np, matrix_SNR], axis=0)
-
-        return _matrix_vel_np[:, :, :, :, np.newaxis], _matrix_SNR_np[:, :, :, :, np.newaxis]
-
-
 if __name__ == '__main__':
     # load data from stored dataset
     dataset_file = 'train_val_dataset'
@@ -179,7 +84,7 @@ if __name__ == '__main__':
 
     # create the model
     NN = CNN()
-    model = NN.CNN1D_test(train_data_np.shape[1:], category_No)
+    model = NN.CNN1D_res(train_data_np.shape[1:], category_No)
     # train_data_np = train_data_np[:, :, :, np.newaxis]  # for 2D only
     # val_data_np = val_data_np[:, :, :, np.newaxis]  # for 2D only
     # model = NN.CNN2D(train_data_np.shape[1:], category_No)

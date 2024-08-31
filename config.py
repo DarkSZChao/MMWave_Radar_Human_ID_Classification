@@ -7,5 +7,6 @@ MODEL_SAVE_DIR = os.path.join(ROOT_DIR, './model/')
 BESTMODEL_SAVE_DIR = os.path.join(ROOT_DIR, './best_model/')
 
 DATASET_DIR = os.path.join(ROOT_DIR, './data/')
-DATASET_TRAIN_VAL_DIR = os.path.join(ROOT_DIR, './data/train_val/')
-DATASET_TEST_DIR = os.path.join(ROOT_DIR, './data/test/')
+RAW_DATA_DIR = os.path.join(ROOT_DIR, './data/raw_data/')
+RAW_DATA_TRAIN_VAL_DIR = os.path.join(ROOT_DIR, './data/raw_data/train_val/')
+RAW_DATA_TEST_DIR = os.path.join(ROOT_DIR, './data/raw_data/test/')

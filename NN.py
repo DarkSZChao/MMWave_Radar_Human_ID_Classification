@@ -20,7 +20,7 @@ if gpus:
 
 def scheduler(epoch, lr):
     if epoch < 10:
-        lr = 0.0002
+        lr = 0.0001
     # elif epoch == 50:
     #     lr = 0.002
     else:
@@ -58,6 +58,10 @@ class OrthogonalRegularizer(keras.regularizers.Regularizer):
         return {'num_features': self.num_features,
                 'l2reg'       : self.l2reg}
 
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
+
 
 class CNN(TF_callbacks):
     """
@@ -82,11 +86,10 @@ class CNN(TF_callbacks):
         return Activation("relu")(layer)
 
     @staticmethod
-    def _dense_bn(filters, layer, time_related_enable=False):
-        if not time_related_enable:
-            layer = Dense(filters)(layer)
-            layer = BatchNormalization(momentum=0.0)(layer)
-            return Activation("relu")(layer)
+    def _dense_bn_relu(filters, layer):
+        layer = Dense(filters)(layer)
+        layer = BatchNormalization(momentum=0.0)(layer)
+        return Activation("relu")(layer)
 
     def _conv1d_res_block(self, filters, kernel_size, block_input, first_block=False, time_related_enable=False):
         if first_block:
@@ -109,8 +112,8 @@ class CNN(TF_callbacks):
             layer = self._conv1d_bn_relu(64, 1, layer)
             layer = self._conv1d_bn_relu(512, 1, layer)
             layer = GlobalMaxPooling1D()(layer)
-            layer = self._dense_bn(256, layer)
-            layer = self._dense_bn(128, layer)
+            layer = self._dense_bn_relu(256, layer)
+            layer = self._dense_bn_relu(128, layer)
             layer = Dense(num_features * num_features,
                           kernel_initializer="zeros",
                           bias_initializer=bias,
@@ -134,8 +137,8 @@ class CNN(TF_callbacks):
             layer = self._conv1d_bn_relu(64, 1, layer)
             layer = self._conv1d_bn_relu(512, 1, layer)
             layer = GlobalMaxPooling1D()(layer)
-            layer = self._dense_bn(256, layer)
-            layer = self._dense_bn(128, layer)
+            layer = self._dense_bn_relu(256, layer)
+            layer = self._dense_bn_relu(128, layer)
             layer = Dense(num_features * num_features,
                           kernel_initializer="zeros",
                           bias_initializer=bias,
@@ -153,10 +156,10 @@ class CNN(TF_callbacks):
 
             layer = self._conv1d_bn_relu(32, 1, block_input)
             layer = self._conv1d_bn_relu(64, 1, layer)
-            layer = self._conv1d_bn_relu(512, 1, layer)
+            layer = self._conv1d_bn_relu(256, 1, layer)
             layer = GlobalMaxPooling1D()(layer)
-            layer = self._dense_bn(256, layer)
-            layer = self._dense_bn(128, layer)
+            layer = self._dense_bn_relu(128, layer)
+            layer = self._dense_bn_relu(64, layer)
             layer = Dense(num_features * num_features,
                           kernel_initializer="zeros",
                           bias_initializer=bias,
@@ -179,10 +182,10 @@ class CNN(TF_callbacks):
 
             layer = self._conv1d_bn_relu(32, 1, points_xyz)
             layer = self._conv1d_bn_relu(64, 1, layer)
-            layer = self._conv1d_bn_relu(512, 1, layer)
+            layer = self._conv1d_bn_relu(256, 1, layer)
             layer = GlobalMaxPooling1D()(layer)
-            layer = self._dense_bn(256, layer)
-            layer = self._dense_bn(128, layer)
+            layer = self._dense_bn_relu(128, layer)
+            layer = self._dense_bn_relu(64, layer)
             layer = Dense(num_features * num_features,
                           kernel_initializer="zeros",
                           bias_initializer=bias,
@@ -198,7 +201,33 @@ class CNN(TF_callbacks):
     CNN main structures defined
     """
 
-    def CNN1D_res(self, input_shape, output_shape):
+    def CNN1D_Dense(self, input_shape, output_shape):
+        model_input = Input(shape=input_shape)
+
+        layer = self._conv1d_bn_relu(128, 1, model_input)
+        layer = MaxPooling1D(pool_size=2)(layer)
+        layer = self._conv1d_bn_relu(128, 1, layer)
+        layer = MaxPooling1D(pool_size=2)(layer)
+        layer = self._conv1d_bn_relu(256, 1, layer)
+        layer = MaxPooling1D(pool_size=2)(layer)
+        layer = self._conv1d_bn_relu(256, 1, layer)
+        layer = MaxPooling1D(pool_size=2)(layer)
+        layer = self._conv1d_bn_relu(512, 1, layer)
+        layer = MaxPooling1D(pool_size=2)(layer)
+        layer = self._conv1d_bn_relu(512, 1, layer)
+        layer = MaxPooling1D(pool_size=2)(layer)
+
+        layer = Flatten()(layer)
+        layer = self._dense_bn_relu(512, layer)
+        layer = Dropout(0.3)(layer)
+        layer = self._dense_bn_relu(256, layer)
+        layer = Dropout(0.3)(layer)
+        layer = self._dense_bn_relu(64, layer)
+        layer = Dropout(0.3)(layer)
+        layer = Dense(output_shape, activation='softmax')(layer)
+        return Model(model_input, layer)
+
+    def CNN1D_Dense_Tnet_GMPooling(self, input_shape, output_shape):
         model_input = Input(shape=input_shape)
 
         # layer = self._tnet(5, model_input, xyz_trans_only=False)
@@ -209,71 +238,72 @@ class CNN(TF_callbacks):
         layer = self._conv1d_res_block(512, 1, layer, first_block=True)
         layer = GlobalMaxPooling1D()(layer)  # symmetric function for point cloud
 
-        layer = self._dense_bn(512, layer)
+        layer = self._dense_bn_relu(512, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(256, layer)
+        layer = self._dense_bn_relu(256, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(64, layer)
+        layer = self._dense_bn_relu(64, layer)
         layer = Dropout(0.3)(layer)
         layer = Dense(output_shape, activation='softmax')(layer)
         return Model(model_input, layer)
 
-    def CNN1D_time(self, input_shape, output_shape):
+    def CNN1D_Dense_LSTM(self, input_shape, output_shape):
         model_input = Input(shape=input_shape)
 
-        # layer = Reshape(target_shape=(20, -1))(model_input)
-        # layer = Bidirectional(LSTM(250, return_sequences=True))(layer)
-        # # layer = Bidirectional(LSTM(500, return_sequences=True))(layer)
-        # layer = Reshape(target_shape=(20, -1, 5))(layer)
+        layer = self._conv1d_bn_relu(128, 1, model_input, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
+        layer = self._conv1d_bn_relu(128, 1, layer, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
+        layer = self._conv1d_bn_relu(256, 1, layer, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
+        layer = self._conv1d_bn_relu(256, 1, layer, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
+        layer = self._conv1d_bn_relu(512, 1, layer, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
+        layer = self._conv1d_bn_relu(512, 1, layer, time_related_enable=True)
+        layer = TimeDistributed(MaxPooling1D(pool_size=2))(layer)
 
-        layer = self._tnet_time(3, model_input, xyz_trans_only=True)
+        layer = TimeDistributed(Flatten())(layer)
+        # layer = Bidirectional(LSTM(64, return_sequences=True))(layer)
+        layer = Bidirectional(LSTM(32))(layer)
+        # layer = LSTM(64, return_sequences=True)(layer)
+        # layer = LSTM(128)(layer)
+
+        layer = self._dense_bn_relu(256, layer)
+        layer = Dropout(0.3)(layer)
+        layer = self._dense_bn_relu(128, layer)
+        layer = Dropout(0.3)(layer)
+        layer = self._dense_bn_relu(64, layer)
+        layer = Dropout(0.3)(layer)
+        layer = Dense(output_shape, activation='softmax')(layer)
+        return Model(model_input, layer)
+
+    def CNN1D_Dense_Tnet_GMPooling_LSTM(self, input_shape, output_shape):
+        model_input = Input(shape=input_shape)
+
+        layer = self._tnet_time(3, model_input, xyz_trans_only=True)  # xyz_trans_only will set num_features=3 and generate a 3*3 trans matrix for xyz dimensions only
         # layer = self._conv1d_bn_relu(64, 1, model_input, time_related_enable=True)
-
-        # layer = self._conv1d_bn_relu(128, 1, layer, time_related_enable=True)
-        # layer = self._conv1d_bn_relu(128, 1, layer, time_related_enable=True)
-        # layer = self._conv1d_bn_relu(512, 1, layer, time_related_enable=True)
-        # layer = self._conv1d_bn_relu(1024, 1, layer, time_related_enable=True)
 
         layer = self._conv1d_res_block(128, 1, layer, first_block=True, time_related_enable=True)
         layer = self._conv1d_res_block(256, 1, layer, first_block=True, time_related_enable=True)
         layer = self._conv1d_res_block(512, 1, layer, first_block=True, time_related_enable=True)
         layer = TimeDistributed(GlobalMaxPooling1D())(layer)  # symmetric function for point cloud
 
-        # layer = Reshape(target_shape=(512, 1))(layer)
-        layer = Bidirectional(LSTM(64, return_sequences=True))(layer)
-        layer = Bidirectional(LSTM(128))(layer)
+        # layer = Bidirectional(LSTM(64, return_sequences=True))(layer)
+        layer = Bidirectional(LSTM(32))(layer)
         # layer = LSTM(64, return_sequences=True)(layer)
         # layer = LSTM(128)(layer)
 
-        # layer = Flatten()(layer)
-        layer = self._dense_bn(512, layer)
+        layer = self._dense_bn_relu(256, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(256, layer)
+        layer = self._dense_bn_relu(128, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(64, layer)
-        layer = Dropout(0.3)(layer)
-        layer = Dense(output_shape, activation='softmax')(layer)
-        return Model(model_input, layer)
-
-    def CNN1D_time2(self, input_shape, output_shape):
-        model_input = Input(shape=input_shape)
-
-        # layer = self._tnet(5, model_input)
-        layer = ConvLSTM2D(filters=128, kernel_size=(1, 1), padding='same', activation='relu', return_sequences=True)(model_input)
-        layer = BatchNormalization(momentum=0.0)(layer)
-        layer = ConvLSTM2D(filters=256, kernel_size=(1, 1), padding='same', activation='relu')(layer)
-        layer = BatchNormalization(momentum=0.0)(layer)
-        layer = Reshape(target_shape=(200, -1))(layer)
-        layer = GlobalMaxPooling1D()(layer)  # symmetric function for point cloud
-
-        layer = self._dense_bn(256, layer)
-        layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(64, layer)
+        layer = self._dense_bn_relu(64, layer)
         layer = Dropout(0.3)(layer)
         layer = Dense(output_shape, activation='softmax')(layer)
         return Model(model_input, layer)
 
-    def CNN1D(self, input_shape, output_shape):
+    def CNN1D_test(self, input_shape, output_shape):
         model_input = Input(shape=input_shape)
 
         # layer = self._tnet(5, model_input)
@@ -284,16 +314,16 @@ class CNN(TF_callbacks):
         layer = self._conv1d_bn_relu(1024, 1, layer)
         layer = GlobalMaxPooling1D()(layer)  # symmetric function for point cloud
 
-        layer = self._dense_bn(512, layer)
+        layer = self._dense_bn_relu(512, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(256, layer)
+        layer = self._dense_bn_relu(256, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(64, layer)
+        layer = self._dense_bn_relu(64, layer)
         layer = Dropout(0.3)(layer)
         layer = Dense(output_shape, activation='softmax')(layer)
         return Model(model_input, layer)
 
-    def CNN2D(self, input_shape, output_shape):  # batch_size 256
+    def CNN2D_Dense(self, input_shape, output_shape):  # batch_size 256
         model_input = Input(shape=input_shape)
 
         layer = self._conv2d_bn_relu(512, (1, 1), model_input)
@@ -312,31 +342,12 @@ class CNN(TF_callbacks):
         layer = MaxPooling2D(pool_size=(2, 1))(layer)
 
         layer = Flatten()(layer)
-        layer = self._dense_bn(256, layer)
+        layer = self._dense_bn_relu(256, layer)
         layer = Dropout(0.3)(layer)
-        layer = self._dense_bn(64, layer)
+        layer = self._dense_bn_relu(64, layer)
         layer = Dropout(0.3)(layer)
         layer = Dense(output_shape, activation='softmax')(layer)
         return Model(model_input, layer)
-
-
-def model_structure_matrix(input_shape, output_shape):
-    def _submodel_structure(_submodel_input):
-        _submodel = Conv3D(32, (3, 3, 3), padding='same', activation='relu')(_submodel_input)
-        _submodel = MaxPooling3D(pool_size=(2, 2, 2))(_submodel)
-        _submodel = Reshape(target_shape=(16 * 9, 32))(_submodel)
-        _submodel = Bidirectional(LSTM(64))(_submodel)
-        _submodel = Flatten()(_submodel)
-        return _submodel
-
-    _submodel_input1 = Input(shape=input_shape[0])
-    _submodel_input2 = Input(shape=input_shape[1])
-    _submodel1 = _submodel_structure(_submodel_input1)
-    _submodel2 = _submodel_structure(_submodel_input2)
-
-    _model = Concatenate()([_submodel1, _submodel2])
-    _model = Dense(output_shape)(_model)
-    return Model([_submodel_input1, _submodel_input2], _model)
 
 
 if __name__ == '__main__':
@@ -344,6 +355,6 @@ if __name__ == '__main__':
     # model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     # model.summary()
 
-    model = CNN().CNN1D((300, 5), 10)
+    model = CNN().CNN1D_test((300, 5), 10)
     model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
     model.summary()

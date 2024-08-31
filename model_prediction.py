@@ -3,6 +3,7 @@ import pickle
 from collections import deque, Counter
 
 from tensorflow.keras.models import load_model
+import tensorflow as tf
 
 from NN import OrthogonalRegularizer
 from config import *
@@ -59,14 +60,22 @@ if __name__ == '__main__':
     with open(os.path.join(os.path.dirname(BESTMODEL_SAVE_DIR), '200_filtered_timelen_30_tnet/corresp_labels_12.json'), 'r') as json_file:
         corresp_labels = json.load(json_file)
     # load data and label
-    dataset_file = '200_filtered_timelen_30_tnet/test_dataset_200_filtered_timelen_30'
-    with open(f'{os.path.join(BESTMODEL_SAVE_DIR, dataset_file)}', 'rb') as file:
+    dataset_file = 'test_dataset_12_200_filtered_timelen_30_step1'
+    with open(f'{os.path.join(DATASET_DIR, dataset_file)}', 'rb') as file:
         test_data_np, test_labels_np = pickle.load(file)
 
     # test_data_np = test_data_np[:, :, :, np.newaxis]  # for 2D only
     # test_data_np = test_data_np[:, :, :, :, np.newaxis]  # for 2D time only
 
     # load model
-    model = load_model(os.path.join(BESTMODEL_SAVE_DIR, '200_filtered_timelen_30_tnet/20.h5'), custom_objects={'OrthogonalRegularizer': OrthogonalRegularizer})
+    model = load_model(os.path.join(BESTMODEL_SAVE_DIR, '200_filtered_timelen_30_tnet/30.h5'), custom_objects={'OrthogonalRegularizer': OrthogonalRegularizer})
+
+    model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(),  # when label_categorical is False
+                  optimizer='adam',
+                  metrics=['accuracy'])
+
+    # # load checkpoint
+    # model.load_weights(os.path.join(BESTMODEL_SAVE_DIR, '200_filtered_timelen_20/ep001_valloss1.12_valacc0.738.h5'))
+
     # predict each data file
-    model_prediction(test_data_np, test_labels_np, corresp_labels, model, print_details=False, blur_pred_len=20)
+    model_prediction(test_data_np, test_labels_np, corresp_labels, model, print_details=False, blur_pred_len=60)
